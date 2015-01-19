@@ -5,11 +5,14 @@ import org.specs2.spring.annotation.SystemEnvironment;
 import org.specs2.spring.annotation.SystemProperties;
 import org.specs2.spring.annotation.UseProfile;
 import org.springframework.context.ApplicationContext;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.context.support.GenericXmlApplicationContext;
 import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.core.env.ConfigurableEnvironment;
 import org.springframework.core.env.StandardEnvironment;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.ContextConfiguration;
+import org.springframework.util.StringUtils;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -21,7 +24,7 @@ import java.util.Map;
  */
 class TestContext {
 
-    private GenericXmlApplicationContext context;
+    private AnnotationConfigApplicationContext context;
 
     /**
      * Creates the {@link ApplicationContext} and autowire the fields / setters test object.
@@ -32,8 +35,8 @@ class TestContext {
         final ContextConfiguration contextConfiguration = AnnotationUtils.findAnnotation(specification.getClass(), ContextConfiguration.class);
         if (contextConfiguration == null) return;
 
-        this.context = new GenericXmlApplicationContext();
-        ContextLoaderFactory.getContextLoader(this.context).load(specification, contextConfiguration.value());
+        this.context = new AnnotationConfigApplicationContext();
+        ContextLoaderFactory.getContextLoader(this.context).load(specification, contextConfiguration.classes());
         this.context.getAutowireCapableBeanFactory().autowireBean(specification);
     }
 
@@ -52,7 +55,7 @@ class TestContext {
 }
 
 class ContextLoaderFactory {
-    static ContextLoader getContextLoader(GenericXmlApplicationContext context) {
+    static ContextLoader getContextLoader(AnnotationConfigApplicationContext context) {
         try {
             Class.forName("org.springframework.core.env.ConfigurableEnvironment");
             return new Spring31ContextLoader(context);
@@ -65,34 +68,34 @@ class ContextLoaderFactory {
 
 interface ContextLoader {
 
-    void load(Object specification, String[] configLocations);
+    void load(Object specification, Class[] configClasses);
 }
 
 class Spring25ContextLoader implements ContextLoader {
-    private GenericXmlApplicationContext context;
+    private AnnotationConfigApplicationContext context;
 
-    Spring25ContextLoader(GenericXmlApplicationContext context) {
+    Spring25ContextLoader(AnnotationConfigApplicationContext context) {
         this.context = context;
     }
 
     @Override
-    public void load(Object specification, String[] configLocations) {
-        this.context.load(configLocations);
+    public void load(Object specification, Class[] configClasses) {
+        this.context.register(configClasses);
         this.context.refresh();
     }
 }
 
 class Spring31ContextLoader implements ContextLoader {
-    private GenericXmlApplicationContext context;
+    private AnnotationConfigApplicationContext context;
 
-    Spring31ContextLoader(GenericXmlApplicationContext context) {
+    Spring31ContextLoader(AnnotationConfigApplicationContext context) {
         this.context = context;
     }
 
     @Override
-    public void load(Object specification, String[] configLocations) {
+    public void load(Object specification, Class[] configClasses) {
         this.context.setEnvironment(setupTestEnvironment(specification));
-        this.context.load(configLocations);
+        this.context.register(configClasses);
         this.context.refresh();
     }
 
@@ -110,6 +113,15 @@ class Spring31ContextLoader implements ContextLoader {
         if (systemProperties != null) {
             environment.setSystemProperties(systemProperties.clear(), systemProperties.overwrite(),
                     systemProperties.nullValue(), systemProperties.value(), systemProperties.properties());
+        }
+
+        final ActiveProfiles activeProfiles = AnnotationUtils.findAnnotation(specification.getClass(), ActiveProfiles.class);
+        if (activeProfiles != null) {
+            if (activeProfiles.value() != null) {
+                environment.setActiveProfiles(activeProfiles.value());
+            } else if (activeProfiles.profiles() != null) {
+                environment.setActiveProfiles(activeProfiles.profiles());
+            }
         }
 
         return environment;
